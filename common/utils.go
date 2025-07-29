@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"crypto/md5"
+	"encoding/hex"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -301,4 +303,9 @@ func BuildURL(base string, endpoint string) string {
 		return base + endpoint
 	}
 	return u.ResolveReference(ref).String()
+}
+
+func GetMD5Hash(text string) string {
+	hash := md5.Sum([]byte(text))
+	return hex.EncodeToString(hash[:])
 }

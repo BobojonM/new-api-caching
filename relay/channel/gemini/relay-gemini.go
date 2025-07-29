@@ -136,7 +136,7 @@ func ThinkingAdaptor(geminiRequest *GeminiChatRequest, info *relaycommon.RelayIn
 }
 
 // Setting safety to the lowest possible values since Gemini is already powerless enough
-func CovertGemini2OpenAI(textRequest dto.GeneralOpenAIRequest, info *relaycommon.RelayInfo) (*GeminiChatRequest, error) {
+func ConvertGemini2OpenAI(textRequest dto.GeneralOpenAIRequest, info *relaycommon.RelayInfo) (*GeminiChatRequest, error) {
 
 	geminiRequest := GeminiChatRequest{
 		Contents: make([]GeminiChatContent, 0, len(textRequest.Messages)),
@@ -394,6 +394,15 @@ func CovertGemini2OpenAI(textRequest dto.GeneralOpenAIRequest, info *relaycommon
 				},
 			},
 		}
+	}
+
+	//Attaching cache content
+	cacheName, err := GetOrCreateGeminiCache(info.ApiKey, info.ChannelId, info.UpstreamModelName, &geminiRequest)
+	if err == nil && cacheName != "" {
+		geminiRequest.CachedContent = cacheName
+		common.SysLog("Gemini cache attached: " + cacheName)
+	} else if err != nil {
+		common.SysLog("Failed to use Gemini cache: " + err.Error())
 	}
 
 	return &geminiRequest, nil

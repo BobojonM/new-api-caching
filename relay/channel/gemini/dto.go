@@ -8,6 +8,19 @@ type GeminiChatRequest struct {
 	GenerationConfig   GeminiChatGenerationConfig `json:"generationConfig,omitempty"`
 	Tools              []GeminiChatTool           `json:"tools,omitempty"`
 	SystemInstructions *GeminiChatContent         `json:"systemInstruction,omitempty"`
+	CachedContent      string 					  `json:"cachedContent,omitempty"`
+}
+
+type GeminiCachedContentRequest struct {
+	Model             string                `json:"model"`
+	SystemInstruction *GeminiChatContent    `json:"systemInstruction,omitempty"`
+	Contents          []GeminiChatContent   `json:"contents"`
+	Ttl               string                `json:"ttl,omitempty"` // e.g. "3600s"
+	DisplayName       string                `json:"displayName,omitempty"`
+}
+
+type GeminiCachedContentResponse struct {
+	Name string `json:"name"` // e.g. "cachedContents/abc123"
 }
 
 type GeminiThinkingConfig struct {
@@ -141,6 +154,7 @@ type GeminiChatGenerationConfig struct {
 	ResponseModalities []string              `json:"responseModalities,omitempty"`
 	ThinkingConfig     *GeminiThinkingConfig `json:"thinkingConfig,omitempty"`
 	SpeechConfig       json.RawMessage       `json:"speechConfig,omitempty"` // RawMessage to allow flexible speech config
+	Model string `json:"model,omitempty"`
 }
 
 type GeminiChatCandidate struct {
