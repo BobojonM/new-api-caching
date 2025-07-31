@@ -33,21 +33,27 @@ func GetOrCreateGeminiCache(apiKey string, channelID int, model string, request 
 		return "", nil
 	}
 
-	prompt := ExtractLastUserPromptText(request)
+	prompt := ExtractLastUserPromptText(request.Contents)
 	hash := common.GetMD5Hash(model + "|" + prompt)
-	redisKey := fmt.Sprintf("gemini_cache:%s:%s", channelID, hash)
+	redisKey := fmt.Sprintf("gemini_cache:%s", hash)
 
-	var cachedID string
 	var err error
 
 	if common.RedisEnabled {
-		cachedID, err = common.RDB.Get(context.Background(), redisKey).Result()
-		if err == nil && cachedID != "" {
-			common.SysLog("Found cachedID in Redis: " + cachedID)
+		val, err := common.RDB.Get(context.Background(), redisKey).Result()
 
-			if exists, err := LookupGeminiCacheByID(apiKey, cachedID); err == nil && exists {
-				common.SysLog("Gemini cache confirmed via lookup: " + cachedID)
-				return cachedID, nil
+		if err == nil && val != "" {
+			var cached struct {
+				CacheName string `json:"cache_name"`
+				ChannelID int    `json:"channel_id"`
+			}
+			_ = json.Unmarshal([]byte(val), &cached)
+
+			common.SysLog("Found cachedID in Redis: " + cached.CacheName)
+
+			if exists, err := LookupGeminiCacheByID(apiKey, cached.CacheName); err == nil && exists {
+				common.SysLog("Gemini cache confirmed via lookup: " + cached.CacheName)
+				return cached.CacheName, nil
 			}
 			common.SysLog("Gemini lookup failed, creating new cache...")
 		}
@@ -61,8 +67,13 @@ func GetOrCreateGeminiCache(apiKey string, channelID int, model string, request 
 	}
 
 	if common.RedisEnabled {
-		_ = common.RDB.Set(context.Background(), redisKey, newID, time.Hour).Err()
-		common.SysLog("Gemini cache saved to Redis: " + redisKey + " = " + newID)
+		value := map[string]interface{}{
+			"cache_name": newID,
+			"channel_id": channelID,
+		}
+		jsonValue, _ := json.Marshal(value)
+		_ = common.RDB.Set(context.Background(), redisKey, jsonValue, time.Hour).Err()
+		common.SysLog("Gemini cache saved to Redis: " + redisKey + " = " + string(jsonValue))
 	}
 
 	return newID, nil
@@ -149,9 +160,9 @@ func CountTokensFromParts(contents []GeminiChatContent) int {
 	return count
 }
 
-func ExtractLastUserPromptText(request *GeminiChatRequest) string {
-	for i := len(request.Contents) - 1; i >= 0; i-- {
-		content := request.Contents[i]
+func ExtractLastUserPromptText(contents []GeminiChatContent) string {
+	for i := len(contents) - 1; i >= 0; i-- {
+		content := contents[i]
 		if content.Role == "user" {
 			var b strings.Builder
 			for _, part := range content.Parts {

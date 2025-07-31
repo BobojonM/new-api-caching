@@ -244,6 +244,21 @@ func addUsedChannel(c *gin.Context, channelId int) {
 }
 
 func getChannel(c *gin.Context, group, originalModel string, retryCount int) (*model.Channel, *types.NewAPIError) {
+	if common.IsGeminiModel(originalModel) {
+		if cachedChannelID := relay.GetGeminiCacheChannelID(c, originalModel); cachedChannelID != 0 {
+			channel, err := model.CacheGetChannel(cachedChannelID)
+			if err == nil {
+				newAPIError := middleware.SetupContextForSelectedChannel(c, channel, originalModel)
+				if newAPIError != nil {
+					return nil, newAPIError
+				}
+				return channel, nil
+			}
+		} else {
+			common.SysLog("Gemini cache not found")
+		}
+	}
+
 	if retryCount == 0 {
 		autoBan := c.GetBool("auto_ban")
 		autoBanInt := 1

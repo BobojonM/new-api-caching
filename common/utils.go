@@ -309,3 +309,7 @@ func GetMD5Hash(text string) string {
 	hash := md5.Sum([]byte(text))
 	return hex.EncodeToString(hash[:])
 }
+
+func IsGeminiModel(model string) bool {
+	return strings.HasPrefix(model, "gemini") || strings.Contains(model, "gemini-pro")
+}

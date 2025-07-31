@@ -234,3 +234,13 @@ type GeminiEmbeddingResponse struct {
 type ContentEmbedding struct {
 	Values []float64 `json:"values"`
 }
+
+type GeminiMessagesRequest struct {
+	Model    string               `json:"model"`
+	Messages []GeminiChatMessage  `json:"messages"`
+}
+
+type GeminiChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}

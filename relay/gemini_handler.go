@@ -16,6 +16,7 @@ import (
 	"one-api/setting/model_setting"
 	"one-api/types"
 	"strings"
+	"context"
 
 	"github.com/gin-gonic/gin"
 )
@@ -231,4 +232,45 @@ func GeminiHelper(c *gin.Context) (newAPIError *types.NewAPIError) {
 
 	postConsumeQuota(c, relayInfo, usage.(*dto.Usage), preConsumedQuota, userQuota, priceData, "")
 	return nil
+}
+
+func GetGeminiCacheChannelID(c *gin.Context, model string) int {
+	var request gemini.GeminiMessagesRequest
+
+	if err := common.UnmarshalBodyReusable(c, &request); err != nil {
+		return 0
+	}
+
+	prompt := extractLastUserPromptText(request)
+	hash := common.GetMD5Hash(model + "|" + prompt)
+	redisKey := fmt.Sprintf("gemini_cache:%s", hash)
+
+	val, err := common.RDB.Get(context.Background(), redisKey).Result()
+	if err != nil {
+		return 0
+	}
+
+	var cached struct {
+		CacheName string `json:"cache_name"`
+		ChannelID int    `json:"channel_id"`
+	}
+	_ = json.Unmarshal([]byte(val), &cached)
+
+	return cached.ChannelID
+}
+
+func extractLastUserPromptText(request gemini.GeminiMessagesRequest) string {
+	for i := len(request.Messages) - 1; i >= 0; i-- {
+		message := request.Messages[i]
+		if message.Role == "user" {
+			var b strings.Builder
+			
+			if message.Content != "" {
+				b.WriteString(message.Content)
+			}
+			
+			return b.String()
+		}
+	}
+	return ""
 }
