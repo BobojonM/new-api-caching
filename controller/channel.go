@@ -914,3 +914,50 @@ func CopyChannel(c *gin.Context) {
 	// success
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"id": clone.Id}})
 }
+
+// GetChannelCachedContent return channel caches by its id.
+// GET /api/channel/:id/caches
+func GetChannelCachedContent(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	// Получаем ВСЕ ключи gemini_cache:*
+	keys, err := common.RDB.Keys(c, "gemini_cache:*").Result()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	type CachedEntry struct {
+		CacheName string `json:"cache_name"`
+		ChannelID int    `json:"channel_id"`
+	}
+
+	matching := make([]string, 0)
+
+	// Проверяем каждый ключ
+	for _, key := range keys {
+		val, err := common.RDB.Get(c, key).Result()
+		if err != nil {
+			continue
+		}
+		var cached CachedEntry
+		if err := json.Unmarshal([]byte(val), &cached); err != nil {
+			continue
+		}
+		if cached.ChannelID == id {
+			matching = append(matching, fmt.Sprintf("%s  =>  %s", key, cached.CacheName))
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":       true,
+		"message":       "",
+		"channel_id":    id,
+		"caches":        matching,
+	})
+}
+
