@@ -38,6 +38,7 @@ import {
   IllustrationNoResultDark
 } from '@douyinfe/semi-illustrations';
 import EditChannel from '../../pages/Channel/EditChannel.js';
+import ChannelCacheViewer from '../../pages/Channel/ChannelCacheViewer.js';
 import {
   IconTreeTriangleDown,
   IconSearch,
@@ -225,6 +226,7 @@ const ChannelsTable = () => {
     BALANCE: 'balance',
     PRIORITY: 'priority',
     WEIGHT: 'weight',
+    CHANNEL_CACHE: 'channel_cache',
     OPERATE: 'operate',
   };
 
@@ -279,6 +281,7 @@ const ChannelsTable = () => {
       [COLUMN_KEYS.BALANCE]: true,
       [COLUMN_KEYS.PRIORITY]: true,
       [COLUMN_KEYS.WEIGHT]: true,
+      [COLUMN_KEYS.CHANNEL_CACHE]: true,
       [COLUMN_KEYS.OPERATE]: true,
     };
   };
@@ -530,6 +533,28 @@ const ChannelsTable = () => {
           );
         }
       },
+    },
+    {
+      key: COLUMN_KEYS.CHANNEL_CACHE,
+      title: t('Cached Content'),
+      dataIndex: 'channel_cache',
+      render: (text, record) => {
+        return (
+          <Button
+            type='tertiary'
+            onClick={() => {
+              Modal.info({
+                title: `${t('Cache content of the channel:')} ${record.name}`,
+                content: <ChannelCacheViewer channelId={record.id} />,
+                width: 600,
+              });
+            }}
+            size='small'
+          >
+            {t('Caches')}
+          </Button>
+        );
+      }
     },
     {
       key: COLUMN_KEYS.OPERATE,
