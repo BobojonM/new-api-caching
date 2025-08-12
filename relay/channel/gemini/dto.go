@@ -236,8 +236,9 @@ type ContentEmbedding struct {
 }
 
 type GeminiMessagesRequest struct {
-	Model    string               `json:"model"`
-	Messages []GeminiChatMessage  `json:"messages"`
+	Model              string              `json:"model"`
+	Messages           []GeminiChatMessage `json:"messages"`
+	SystemInstructions *GeminiChatMessage  `json:"systemInstruction,omitempty"`
 }
 
 type GeminiChatMessage struct {

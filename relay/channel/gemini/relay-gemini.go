@@ -136,8 +136,7 @@ func ThinkingAdaptor(geminiRequest *GeminiChatRequest, info *relaycommon.RelayIn
 }
 
 // Setting safety to the lowest possible values since Gemini is already powerless enough
-func ConvertGemini2OpenAI(textRequest dto.GeneralOpenAIRequest, info *relaycommon.RelayInfo) (*GeminiChatRequest, error) {
-
+func ConvertGemini2OpenAI(c *gin.Context, textRequest dto.GeneralOpenAIRequest, info *relaycommon.RelayInfo) (*GeminiChatRequest, error) {
 	geminiRequest := GeminiChatRequest{
 		Contents: make([]GeminiChatContent, 0, len(textRequest.Messages)),
 		GenerationConfig: GeminiChatGenerationConfig{
@@ -394,15 +393,23 @@ func ConvertGemini2OpenAI(textRequest dto.GeneralOpenAIRequest, info *relaycommo
 				},
 			},
 		}
-	}
 
-	//Attaching cache content
-	cacheName, err := GetOrCreateGeminiCache(info.ApiKey, info.ChannelId, info.UpstreamModelName, &geminiRequest)
-	if err == nil && cacheName != "" {
-		geminiRequest.CachedContent = cacheName
-		common.SysLog("Gemini cache attached: " + cacheName)
-	} else if err != nil {
-		common.SysLog("Failed to use Gemini cache: " + err.Error())
+		if valRaw, ok := common.GetContextKey(c, constant.ContextKeyTokenEnableGeminiCache); ok {
+			if val, ok := valRaw.(bool); ok && val {
+				//Attaching cached SystemInstructions
+				cacheName, IsCacheJustCreated, createdTokens, err := GetOrCreateGeminiCache(info.ApiKey, info.ChannelId, info.UpstreamModelName, &geminiRequest)
+				if err == nil && cacheName != "" {
+					geminiRequest.CachedContent = cacheName
+					if IsCacheJustCreated {
+						info.IsGeminiCacheCreation = true
+						info.GeminiCacheCreationTokens = createdTokens
+					}
+					common.SysLog("Gemini cache attached: " + cacheName)
+				} else if err != nil {
+					common.SysLog("Failed to use Gemini cache: " + err.Error())
+				}
+			}
+		}
 	}
 
 	return &geminiRequest, nil
@@ -830,12 +837,19 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 			usage.CompletionTokens = geminiResponse.UsageMetadata.CandidatesTokenCount
 			usage.CompletionTokenDetails.ReasoningTokens = geminiResponse.UsageMetadata.ThoughtsTokenCount
 			usage.TotalTokens = geminiResponse.UsageMetadata.TotalTokenCount
+
+			sumDetails := 0
 			for _, detail := range geminiResponse.UsageMetadata.PromptTokensDetails {
 				if detail.Modality == "AUDIO" {
 					usage.PromptTokensDetails.AudioTokens = detail.TokenCount
 				} else if detail.Modality == "TEXT" {
 					usage.PromptTokensDetails.TextTokens = detail.TokenCount
 				}
+				sumDetails += detail.TokenCount
+			}
+
+			if sumDetails < usage.PromptTokens {
+				usage.PromptTokensDetails.CachedTokens = usage.PromptTokens - sumDetails
 			}
 		}
 		err = helper.ObjectData(c, response)
@@ -900,12 +914,18 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	usage.CompletionTokenDetails.ReasoningTokens = geminiResponse.UsageMetadata.ThoughtsTokenCount
 	usage.CompletionTokens = usage.TotalTokens - usage.PromptTokens
 
+	sumDetails := 0
 	for _, detail := range geminiResponse.UsageMetadata.PromptTokensDetails {
 		if detail.Modality == "AUDIO" {
 			usage.PromptTokensDetails.AudioTokens = detail.TokenCount
 		} else if detail.Modality == "TEXT" {
 			usage.PromptTokensDetails.TextTokens = detail.TokenCount
 		}
+		sumDetails += detail.TokenCount
+	}
+
+	if sumDetails < usage.PromptTokens {
+		usage.PromptTokensDetails.CachedTokens = usage.PromptTokens - sumDetails
 	}
 
 	fullTextResponse.Usage = usage

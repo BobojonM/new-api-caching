@@ -241,8 +241,9 @@ func GetGeminiCacheChannelID(c *gin.Context, model string) int {
 		return 0
 	}
 
-	prompt := extractLastUserPromptText(request)
-	hash := common.GetMD5Hash(model + "|" + prompt)
+	//prompt := extractLastUserPromptText(request)
+	//hash := common.GetMD5Hash(model + "|" + prompt)
+	hash := hashSystemInstructions(request.SystemInstructions)
 	redisKey := fmt.Sprintf("gemini_cache:%s", hash)
 
 	val, err := common.RDB.Get(context.Background(), redisKey).Result()
@@ -259,18 +260,10 @@ func GetGeminiCacheChannelID(c *gin.Context, model string) int {
 	return cached.ChannelID
 }
 
-func extractLastUserPromptText(request gemini.GeminiMessagesRequest) string {
-	for i := len(request.Messages) - 1; i >= 0; i-- {
-		message := request.Messages[i]
-		if message.Role == "user" {
-			var b strings.Builder
-			
-			if message.Content != "" {
-				b.WriteString(message.Content)
-			}
-			
-			return b.String()
-		}
+func hashSystemInstructions(system *gemini.GeminiChatMessage) string {
+	if system == nil {
+		return ""
 	}
-	return ""
+	bytes, _ := json.Marshal(system)
+	return common.GetMD5Hash(string(bytes))
 }
