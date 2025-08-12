@@ -11,7 +11,6 @@ const (
 	ContextKeyTokenKey               ContextKey = "token_key"
 	ContextKeyTokenId                ContextKey = "token_id"
 	ContextKeyTokenGroup             ContextKey = "token_group"
-	ContextKeyTokenAllowIps          ContextKey = "allow_ips"
 	ContextKeyTokenSpecificChannelId ContextKey = "specific_channel_id"
 	ContextKeyTokenModelLimitEnabled ContextKey = "token_model_limit_enabled"
 	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"
@@ -24,6 +23,7 @@ const (
 	ContextKeyChannelBaseUrl           ContextKey = "base_url"
 	ContextKeyChannelType              ContextKey = "channel_type"
 	ContextKeyChannelSetting           ContextKey = "channel_setting"
+	ContextKeyChannelOtherSetting      ContextKey = "channel_other_setting"
 	ContextKeyChannelParamOverride     ContextKey = "param_override"
 	ContextKeyChannelOrganization      ContextKey = "channel_organization"
 	ContextKeyChannelAutoBan           ContextKey = "auto_ban"
@@ -42,4 +42,6 @@ const (
 	ContextKeyUserGroup   ContextKey = "user_group"
 	ContextKeyUsingGroup  ContextKey = "group"
 	ContextKeyUserName    ContextKey = "username"
+
+	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"
 )
