@@ -272,6 +272,7 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	} else {
 		c.Set("token_model_limit_enabled", false)
 	}
+	c.Set("token_enable_gemini_cache", token.EnableGeminiCache)
 	c.Set("allow_ips", token.GetIpLimitsMap())
 	c.Set("token_group", token.Group)
 	if len(parts) > 1 {

@@ -81,5 +81,5 @@
     "singleQuote": true,
     "jsxSingleQuote": true
   },
-  "proxy": "https://newapi.sells2v.my"
+  "proxy": "http://localhost:3141"
 }

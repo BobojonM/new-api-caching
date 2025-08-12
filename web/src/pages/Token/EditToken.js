@@ -54,6 +54,7 @@ const EditToken = (props) => {
     allow_ips: '',
     group: '',
     tokenCount: 1,
+    enable_gemini_cache: false,
   });
 
   const handleCancel = () => {
@@ -202,6 +203,7 @@ const EditToken = (props) => {
       }
       localInputs.model_limits = localInputs.model_limits.join(',');
       localInputs.model_limits_enabled = localInputs.model_limits.length > 0;
+      localInputs.enable_gemini_cache = values.enable_gemini_cache;
       let res = await API.put(`/api/token/`, {
         ...localInputs,
         id: parseInt(props.editingToken.id),
@@ -238,6 +240,7 @@ const EditToken = (props) => {
         }
         localInputs.model_limits = localInputs.model_limits.join(',');
         localInputs.model_limits_enabled = localInputs.model_limits.length > 0;
+        localInputs.enable_gemini_cache = values.enable_gemini_cache;
         let res = await API.post(`/api/token/`, localInputs);
         const { success, message } = res.data;
         if (success) {
@@ -429,6 +432,14 @@ const EditToken = (props) => {
                       />
                     </Col>
                   )}
+                  <Col span={24}>
+                    <Form.Switch
+                      field='enable_gemini_cache'
+                      label={t('启用 Gemini 缓存')}
+                      size='large'
+                      extraText={t('允许缓存 System Instructions 来节省重复请求')}
+                    />
+                  </Col>
                 </Row>
               </Card>
 

@@ -63,15 +63,15 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'https://newapi.sells2v.my',
+        target: 'http://localhost:3141',
         changeOrigin: true,
       },
       '/mj': {
-        target: 'https://newapi.sells2v.my',
+        target: 'http://localhost:3141',
         changeOrigin: true,
       },
       '/pg': {
-        target: 'https://newapi.sells2v.my',
+        target: 'http://localhost:3141',
         changeOrigin: true,
       },
     },

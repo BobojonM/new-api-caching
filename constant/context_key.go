@@ -15,6 +15,7 @@ const (
 	ContextKeyTokenSpecificChannelId ContextKey = "specific_channel_id"
 	ContextKeyTokenModelLimitEnabled ContextKey = "token_model_limit_enabled"
 	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"
+	ContextKeyTokenEnableGeminiCache ContextKey = "token_enable_gemini_cache"
 
 	/* channel related keys */
 	ContextKeyChannelId                ContextKey = "channel_id"
