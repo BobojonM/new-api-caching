@@ -383,7 +383,7 @@ func GeminiEmbeddingHandler(c *gin.Context) (newAPIError *types.NewAPIError) {
 }
 
 func GetGeminiCacheChannelID(c *gin.Context, model string) int {
-	var request gemini.GeminiMessagesRequest
+	var request dto.GeminiMessagesRequest
 
 	if err := common.UnmarshalBodyReusable(c, &request); err != nil {
 		return 0
@@ -408,7 +408,7 @@ func GetGeminiCacheChannelID(c *gin.Context, model string) int {
 	return cached.ChannelID
 }
 
-func hashSystemInstructions(system *gemini.GeminiChatMessage) string {
+func hashSystemInstructions(system *dto.GeminiChatMessage) string {
 	if system == nil {
 		return ""
 	}

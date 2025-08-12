@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 	"net/http"
+	"one-api/dto"
 	"one-api/common"
 	"one-api/service"
 	"one-api/setting/model_setting"
@@ -27,7 +28,7 @@ func ShouldEnableGeminiCache(model string, tokenCount int) bool {
 	return true
 }
 
-func GetOrCreateGeminiCache(apiKey string, channelID int, model string, request *GeminiChatRequest) (string, bool, int, error) {
+func GetOrCreateGeminiCache(apiKey string, channelID int, model string, request *dto.GeminiChatRequest) (string, bool, int, error) {
 	tokenCount := CountTokensFromParts(request.SystemInstructions)
 	if !ShouldEnableGeminiCache(model, tokenCount) {
 		return "", false, 0, nil
@@ -104,12 +105,12 @@ func LookupGeminiCacheByID(apiKey string, cachedID string) (bool, error) {
 	return false, fmt.Errorf("lookup by ID failed: %v", errResp)
 }
 
-func CreateGeminiCache(apiKey, model string, request *GeminiChatRequest, displayName string) (string, error) {
+func CreateGeminiCache(apiKey, model string, request *dto.GeminiChatRequest, displayName string) (string, error) {
 	if !strings.HasPrefix(model, "models/") {
 		model = "models/" + model
 	}
 
-	cacheReq := &GeminiCachedContentRequest{
+	cacheReq := &dto.GeminiCachedContentRequest{
 		Model:             model,
 		SystemInstruction: request.SystemInstructions,
 		Ttl:               "600s",
@@ -140,7 +141,7 @@ func CreateGeminiCache(apiKey, model string, request *GeminiChatRequest, display
 		return "", fmt.Errorf("cache creation failed: %v", errResp)
 	}
 
-	var cacheResp GeminiCachedContentResponse
+	var cacheResp dto.GeminiCachedContentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&cacheResp); err != nil {
 		return "", fmt.Errorf("error decoding cache response: %w", err)
 	}
@@ -150,7 +151,7 @@ func CreateGeminiCache(apiKey, model string, request *GeminiChatRequest, display
 }
 
 
-func CountTokensFromParts(content *GeminiChatContent) int {
+func CountTokensFromParts(content *dto.GeminiChatContent) int {
 	count := 0
 	for _, part := range content.Parts {
 		if part.Text != "" {
@@ -160,7 +161,7 @@ func CountTokensFromParts(content *GeminiChatContent) int {
 	return count
 }
 
-func HashSystemInstructions(system *GeminiChatContent) string {
+func HashSystemInstructions(system *dto.GeminiChatContent) string {
 	if system == nil {
 		return ""
 	}
