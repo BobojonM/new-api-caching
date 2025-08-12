@@ -179,7 +179,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		info.UpstreamModelName = claudeReq.Model
 		return vertexClaudeReq, nil
 	} else if a.RequestMode == RequestModeGemini {
-		geminiRequest, err := gemini.ConvertGemini2OpenAI(*request, info)
+		geminiRequest, err := gemini.ConvertGemini2OpenAI(c, *request, info)
 		if err != nil {
 			return nil, err
 		}

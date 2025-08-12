@@ -105,6 +105,8 @@ type RelayInfo struct {
 	RelayFormat          string
 	SendResponseCount    int
 	ChannelCreateTime    int64
+	IsGeminiCacheCreation bool
+	GeminiCacheCreationTokens int
 	ThinkingContentInfo
 	*ClaudeConvertInfo
 	*RerankerInfo

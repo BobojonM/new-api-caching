@@ -440,6 +440,14 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo,
 			cachedTokensWithRatio = dCacheTokens.Mul(dCacheRatio)
 		}
 
+		// gemini cache creation 
+		if relayInfo.IsGeminiCacheCreation && relayInfo.GeminiCacheCreationTokens > 0 {
+			creationTokens := decimal.NewFromInt(int64(relayInfo.GeminiCacheCreationTokens))
+			creationQuota := creationTokens.Mul(ratio) // full price
+			quotaCalculateDecimal = quotaCalculateDecimal.Add(creationQuota)
+			extraContent += fmt.Sprintf("Gemini cache creation: %d tokens (full price)", relayInfo.GeminiCacheCreationTokens)
+		}
+
 		// 减去 image tokens
 		var imageTokensWithRatio decimal.Decimal
 		if !dImageTokens.IsZero() {

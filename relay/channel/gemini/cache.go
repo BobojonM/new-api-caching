@@ -14,13 +14,12 @@ import (
 
 const GeminiCacheMinTokenThreshold = 4096
 
-func ShouldEnableGeminiCache(model string, contents []GeminiChatContent) bool {
+func ShouldEnableGeminiCache(model string, tokenCount int) bool {
 	settings := model_setting.GetGeminiSettings()
 	if !settings.EnableCache {
 		return false
 	}
 
-	tokenCount := CountTokensFromParts(contents)
 	if tokenCount < GeminiCacheMinTokenThreshold {
 		common.SysLog(fmt.Sprintf("Skipping cache creation: token count %d < %d", tokenCount, GeminiCacheMinTokenThreshold))
 		return false
@@ -28,55 +27,59 @@ func ShouldEnableGeminiCache(model string, contents []GeminiChatContent) bool {
 	return true
 }
 
-func GetOrCreateGeminiCache(apiKey string, channelID int, model string, request *GeminiChatRequest) (string, error) {
-	if !ShouldEnableGeminiCache(model, request.Contents) {
-		return "", nil
+func GetOrCreateGeminiCache(apiKey string, channelID int, model string, request *GeminiChatRequest) (string, bool, int, error) {
+	tokenCount := CountTokensFromParts(request.SystemInstructions)
+	if !ShouldEnableGeminiCache(model, tokenCount) {
+		return "", false, 0, nil
 	}
 
-	prompt := ExtractLastUserPromptText(request.Contents)
-	hash := common.GetMD5Hash(model + "|" + prompt)
-	redisKey := fmt.Sprintf("gemini_cache:%s", hash)
+	if request.SystemInstructions != nil {
+		hash := HashSystemInstructions(request.SystemInstructions)
+		redisKey := fmt.Sprintf("gemini_cache:%s", hash)
 
-	var err error
+		var err error
 
-	if common.RedisEnabled {
-		val, err := common.RDB.Get(context.Background(), redisKey).Result()
+		if common.RedisEnabled {
+			val, err := common.RDB.Get(context.Background(), redisKey).Result()
 
-		if err == nil && val != "" {
-			var cached struct {
-				CacheName string `json:"cache_name"`
-				ChannelID int    `json:"channel_id"`
+			if err == nil && val != "" {
+				var cached struct {
+					CacheName string `json:"cache_name"`
+					ChannelID int    `json:"channel_id"`
+				}
+				_ = json.Unmarshal([]byte(val), &cached)
+
+				common.SysLog("Found cachedID in Redis: " + cached.CacheName)
+
+				if exists, err := LookupGeminiCacheByID(apiKey, cached.CacheName); err == nil && exists {
+					common.SysLog("Gemini cache confirmed via lookup: " + cached.CacheName)
+					return cached.CacheName, false, 0, nil
+				}
+				common.SysLog("Gemini lookup failed, creating new cache...")
 			}
-			_ = json.Unmarshal([]byte(val), &cached)
+		} else {
+			common.SysLog("Redis not enabled...")
+		}
 
-			common.SysLog("Found cachedID in Redis: " + cached.CacheName)
+		newID, err := CreateGeminiCache(apiKey, model, request, hash)
+		if err != nil {
+			return "", false, 0, err
+		}
 
-			if exists, err := LookupGeminiCacheByID(apiKey, cached.CacheName); err == nil && exists {
-				common.SysLog("Gemini cache confirmed via lookup: " + cached.CacheName)
-				return cached.CacheName, nil
+		if common.RedisEnabled {
+			value := map[string]interface{}{
+				"cache_name": newID,
+				"channel_id": channelID,
 			}
-			common.SysLog("Gemini lookup failed, creating new cache...")
+			jsonValue, _ := json.Marshal(value)
+			_ = common.RDB.Set(context.Background(), redisKey, jsonValue, time.Hour).Err()
+			common.SysLog("Gemini cache saved to Redis: " + redisKey + " = " + string(jsonValue))
 		}
-	} else {
-		common.SysLog("Redis not enabled...")
+
+		return newID, true, tokenCount, nil
 	}
 
-	newID, err := CreateGeminiCache(apiKey, model, request, hash)
-	if err != nil {
-		return "", err
-	}
-
-	if common.RedisEnabled {
-		value := map[string]interface{}{
-			"cache_name": newID,
-			"channel_id": channelID,
-		}
-		jsonValue, _ := json.Marshal(value)
-		_ = common.RDB.Set(context.Background(), redisKey, jsonValue, time.Hour).Err()
-		common.SysLog("Gemini cache saved to Redis: " + redisKey + " = " + string(jsonValue))
-	}
-
-	return newID, nil
+	return "", false, 0, nil
 }
 
 func LookupGeminiCacheByID(apiKey string, cachedID string) (bool, error) {
@@ -109,8 +112,7 @@ func CreateGeminiCache(apiKey, model string, request *GeminiChatRequest, display
 	cacheReq := &GeminiCachedContentRequest{
 		Model:             model,
 		SystemInstruction: request.SystemInstructions,
-		Contents:          []GeminiChatContent{request.Contents[len(request.Contents)-1]},
-		Ttl:               "3600s",
+		Ttl:               "600s",
 		DisplayName:       displayName,
 	}
 
@@ -148,41 +150,20 @@ func CreateGeminiCache(apiKey, model string, request *GeminiChatRequest, display
 }
 
 
-func CountTokensFromParts(contents []GeminiChatContent) int {
+func CountTokensFromParts(content *GeminiChatContent) int {
 	count := 0
-	for _, content := range contents {
-		for _, part := range content.Parts {
-			if part.Text != "" {
-				count += len(strings.Split(part.Text, " "))
-			}
+	for _, part := range content.Parts {
+		if part.Text != "" {
+			count += len(strings.Split(part.Text, " "))
 		}
 	}
 	return count
 }
 
-func ExtractLastUserPromptText(contents []GeminiChatContent) string {
-	for i := len(contents) - 1; i >= 0; i-- {
-		content := contents[i]
-		if content.Role == "user" {
-			var b strings.Builder
-			for _, part := range content.Parts {
-				if part.Text != "" {
-					b.WriteString(part.Text)
-					//appendPartAsString(&b, part)
-				}
-				if part.InlineData != nil {
-					b.WriteString(part.InlineData.MimeType)
-					b.WriteString(":")
-					b.WriteString(part.InlineData.Data)
-				}
-				if part.FileData != nil {
-					b.WriteString(part.FileData.MimeType)
-					b.WriteString(":")
-					b.WriteString(part.FileData.FileUri)
-				}
-			}
-			return b.String()
-		}
+func HashSystemInstructions(system *GeminiChatContent) string {
+	if system == nil {
+		return ""
 	}
-	return ""
+	bytes, _ := json.Marshal(system)
+	return common.GetMD5Hash(string(bytes))
 }
