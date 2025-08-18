@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/bytedance/gopkg/util/gopool"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -37,61 +36,45 @@ type testResult struct {
 	newAPIError *types.NewAPIError
 }
 
-func testChannel(channel *model.Channel, testModel string) testResult {
+func testChannel(channel *model.Channel, testModel string, testType string) testResult {
 	tik := time.Now()
 	if channel.Type == constant.ChannelTypeMidjourney {
-		return testResult{
-			localErr:    errors.New("midjourney channel test is not supported"),
-			newAPIError: nil,
-		}
+		return testResult{localErr: errors.New("midjourney channel test is not supported")}
 	}
 	if channel.Type == constant.ChannelTypeMidjourneyPlus {
-		return testResult{
-			localErr:    errors.New("midjourney plus channel test is not supported"),
-			newAPIError: nil,
-		}
+		return testResult{localErr: errors.New("midjourney plus channel test is not supported")}
 	}
 	if channel.Type == constant.ChannelTypeSunoAPI {
-		return testResult{
-			localErr:    errors.New("suno channel test is not supported"),
-			newAPIError: nil,
-		}
+		return testResult{localErr: errors.New("suno channel test is not supported")}
 	}
 	if channel.Type == constant.ChannelTypeKling {
-		return testResult{
-			localErr:    errors.New("kling channel test is not supported"),
-			newAPIError: nil,
-		}
+		return testResult{localErr: errors.New("kling channel test is not supported")}
 	}
 	if channel.Type == constant.ChannelTypeJimeng {
-		return testResult{
-			localErr:    errors.New("jimeng channel test is not supported"),
-			newAPIError: nil,
-		}
+		return testResult{localErr: errors.New("jimeng channel test is not supported")}
 	}
 	if channel.Type == constant.ChannelTypeVidu {
-		return testResult{
-			localErr:    errors.New("vidu channel test is not supported"),
-			newAPIError: nil,
-		}
+		return testResult{localErr: errors.New("vidu channel test is not supported")}
 	}
+
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 
 	requestPath := "/v1/chat/completions"
-
-	// 先判断是否为 Embedding 模型
-	if strings.Contains(strings.ToLower(testModel), "embedding") ||
-		strings.HasPrefix(testModel, "m3e") || // m3e 系列模型
-		strings.Contains(testModel, "bge-") || // bge 系列模型
-		strings.Contains(testModel, "embed") ||
-		channel.Type == constant.ChannelTypeMokaAI { // 其他 embedding 模型
-		requestPath = "/v1/embeddings" // 修改请求路径
+	isEmbeddingModel := func(m string) bool {
+		lm := strings.ToLower(m)
+		return strings.Contains(lm, "embedding") ||
+			strings.HasPrefix(m, "m3e") ||
+			strings.Contains(m, "bge-") ||
+			strings.Contains(lm, "embed")
+	}
+	if isEmbeddingModel(testModel) || channel.Type == constant.ChannelTypeMokaAI {
+		requestPath = "/v1/embeddings"
 	}
 
 	c.Request = &http.Request{
 		Method: "POST",
-		URL:    &url.URL{Path: requestPath}, // 使用动态路径
+		URL:    &url.URL{Path: requestPath},
 		Body:   nil,
 		Header: make(http.Header),
 	}
@@ -107,17 +90,18 @@ func testChannel(channel *model.Channel, testModel string) testResult {
 			}
 		}
 	}
+	testType = strings.ToLower(strings.TrimSpace(testType))
+	if testType == "" {
+		testType = "text"
+	}
 
+	// user cache
 	cache, err := model.GetUserCache(1)
 	if err != nil {
-		return testResult{
-			localErr:    err,
-			newAPIError: nil,
-		}
+		return testResult{localErr: err}
 	}
 	cache.WriteContext(c)
 
-	//c.Request.Header.Set("Authorization", "Bearer "+channel.Key)
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("channel", channel.Type)
 	c.Set("base_url", channel.GetBaseURL())
@@ -126,17 +110,12 @@ func testChannel(channel *model.Channel, testModel string) testResult {
 
 	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, testModel)
 	if newAPIError != nil {
-		return testResult{
-			context:     c,
-			localErr:    newAPIError,
-			newAPIError: newAPIError,
-		}
+		return testResult{context: c, localErr: newAPIError, newAPIError: newAPIError}
 	}
 
 	info := relaycommon.GenRelayInfo(c)
 
-	err = helper.ModelMappedHelper(c, info, nil)
-	if err != nil {
+	if err := helper.ModelMappedHelper(c, info, nil); err != nil {
 		return testResult{
 			context:     c,
 			localErr:    err,
@@ -148,106 +127,73 @@ func testChannel(channel *model.Channel, testModel string) testResult {
 	apiType, _ := common.ChannelType2APIType(channel.Type)
 	adaptor := relay.GetAdaptor(apiType)
 	if adaptor == nil {
-		return testResult{
-			context:     c,
-			localErr:    fmt.Errorf("invalid api type: %d, adaptor is nil", apiType),
-			newAPIError: types.NewError(fmt.Errorf("invalid api type: %d, adaptor is nil", apiType), types.ErrorCodeInvalidApiType),
-		}
+		err := fmt.Errorf("invalid api type: %d, adaptor is nil", apiType)
+		return testResult{context: c, localErr: err, newAPIError: types.NewError(err, types.ErrorCodeInvalidApiType)}
 	}
 
-	request := buildTestRequest(testModel)
-	// 创建一个用于日志的 info 副本，移除 ApiKey
+	request := buildTestRequest(testModel, testType)
+
 	logInfo := *info
 	logInfo.ApiKey = ""
-	common.SysLog(fmt.Sprintf("testing channel %d with model %s , info %+v ", channel.Id, testModel, logInfo))
+	common.SysLog(fmt.Sprintf("testing channel %d with model %s (type=%s), info %+v", channel.Id, testModel, testType, logInfo))
 
 	priceData, err := helper.ModelPriceHelper(c, info, 0, int(request.GetMaxTokens()))
 	if err != nil {
-		return testResult{
-			context:     c,
-			localErr:    err,
-			newAPIError: types.NewError(err, types.ErrorCodeModelPriceError),
-		}
+		return testResult{context: c, localErr: err, newAPIError: types.NewError(err, types.ErrorCodeModelPriceError)}
 	}
 
 	adaptor.Init(info)
 
 	var convertedRequest any
-	// 根据 RelayMode 选择正确的转换函数
 	if info.RelayMode == relayconstant.RelayModeEmbeddings {
-		// 创建一个 EmbeddingRequest
 		embeddingRequest := dto.EmbeddingRequest{
 			Input: request.Input,
 			Model: request.Model,
 		}
-		// 调用专门用于 Embedding 的转换函数
 		convertedRequest, err = adaptor.ConvertEmbeddingRequest(c, info, embeddingRequest)
 	} else {
-		// 对其他所有请求类型（如 Chat），保持原有逻辑
 		convertedRequest, err = adaptor.ConvertOpenAIRequest(c, info, request)
 	}
-
 	if err != nil {
-		return testResult{
-			context:     c,
-			localErr:    err,
-			newAPIError: types.NewError(err, types.ErrorCodeConvertRequestFailed),
-		}
+		return testResult{context: c, localErr: err, newAPIError: types.NewError(err, types.ErrorCodeConvertRequestFailed)}
 	}
+
 	jsonData, err := json.Marshal(convertedRequest)
 	if err != nil {
-		return testResult{
-			context:     c,
-			localErr:    err,
-			newAPIError: types.NewError(err, types.ErrorCodeJsonMarshalFailed),
-		}
+		return testResult{context: c, localErr: err, newAPIError: types.NewError(err, types.ErrorCodeJsonMarshalFailed)}
 	}
+
 	requestBody := bytes.NewBuffer(jsonData)
 	c.Request.Body = io.NopCloser(requestBody)
+
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
-		return testResult{
-			context:     c,
-			localErr:    err,
-			newAPIError: types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError),
-		}
+		return testResult{context: c, localErr: err, newAPIError: types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)}
 	}
+
 	var httpResp *http.Response
 	if resp != nil {
 		httpResp = resp.(*http.Response)
 		if httpResp.StatusCode != http.StatusOK {
 			err := service.RelayErrorHandler(httpResp, true)
-			return testResult{
-				context:     c,
-				localErr:    err,
-				newAPIError: types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError),
-			}
+			return testResult{context: c, localErr: err, newAPIError: types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)}
 		}
 	}
+
 	usageA, respErr := adaptor.DoResponse(c, httpResp, info)
 	if respErr != nil {
-		return testResult{
-			context:     c,
-			localErr:    respErr,
-			newAPIError: respErr,
-		}
+		return testResult{context: c, localErr: respErr, newAPIError: respErr}
 	}
 	if usageA == nil {
-		return testResult{
-			context:     c,
-			localErr:    errors.New("usage is nil"),
-			newAPIError: types.NewOpenAIError(errors.New("usage is nil"), types.ErrorCodeBadResponseBody, http.StatusInternalServerError),
-		}
+		err := errors.New("usage is nil")
+		return testResult{context: c, localErr: err, newAPIError: types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)}
 	}
 	usage := usageA.(*dto.Usage)
+
 	result := w.Result()
 	respBody, err := io.ReadAll(result.Body)
 	if err != nil {
-		return testResult{
-			context:     c,
-			localErr:    err,
-			newAPIError: types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError),
-		}
+		return testResult{context: c, localErr: err, newAPIError: types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)}
 	}
 	info.PromptTokens = usage.PromptTokens
 
@@ -261,11 +207,16 @@ func testChannel(channel *model.Channel, testModel string) testResult {
 	} else {
 		quota = int(priceData.ModelPrice * common.QuotaPerUnit)
 	}
+
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
 	consumedTime := float64(milliseconds) / 1000.0
-	other := service.GenerateTextOtherInfo(c, info, priceData.ModelRatio, priceData.GroupRatioInfo.GroupRatio, priceData.CompletionRatio,
-		usage.PromptTokensDetails.CachedTokens, priceData.CacheRatio, priceData.ModelPrice, priceData.GroupRatioInfo.GroupSpecialRatio)
+
+	other := service.GenerateTextOtherInfo(
+		c, info,
+		priceData.ModelRatio, priceData.GroupRatioInfo.GroupRatio, priceData.CompletionRatio,
+		usage.PromptTokensDetails.CachedTokens, priceData.CacheRatio, priceData.ModelPrice, priceData.GroupRatioInfo.GroupSpecialRatio,
+	)
 	model.RecordConsumeLog(c, 1, model.RecordConsumeLogParams{
 		ChannelId:        channel.Id,
 		PromptTokens:     usage.PromptTokens,
@@ -279,49 +230,104 @@ func testChannel(channel *model.Channel, testModel string) testResult {
 		Group:            info.UsingGroup,
 		Other:            other,
 	})
+
 	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
-	return testResult{
-		context:     c,
-		localErr:    nil,
-		newAPIError: nil,
-	}
+
+	return testResult{context: c, localErr: nil, newAPIError: nil}
 }
 
-func buildTestRequest(model string) *dto.GeneralOpenAIRequest {
-	testRequest := &dto.GeneralOpenAIRequest{
-		Model:  "", // this will be set later
+func buildTestRequest(modelName string, testType string) *dto.GeneralOpenAIRequest {
+	req := &dto.GeneralOpenAIRequest{
+		Model:  "",
 		Stream: false,
 	}
 
-	// 先判断是否为 Embedding 模型
-	if strings.Contains(strings.ToLower(model), "embedding") || // 其他 embedding 模型
-		strings.HasPrefix(model, "m3e") || // m3e 系列模型
-		strings.Contains(model, "bge-") {
-		testRequest.Model = model
-		// Embedding 请求
-		testRequest.Input = []any{"hello world"} // 修改为any，因为dto/openai_request.go 的ParseInput方法无法处理[]string类型
-		return testRequest
-	}
-	// 并非Embedding 模型
-	if strings.HasPrefix(model, "o") {
-		testRequest.MaxCompletionTokens = 10
-	} else if strings.Contains(model, "thinking") {
-		if !strings.Contains(model, "claude") {
-			testRequest.MaxTokens = 50
-		}
-	} else if strings.Contains(model, "gemini") {
-		testRequest.MaxTokens = 3000
-	} else {
-		testRequest.MaxTokens = 10
+	isEmbedding := func(m string) bool {
+		lm := strings.ToLower(m)
+		return strings.Contains(lm, "embedding") ||
+			strings.HasPrefix(m, "m3e") ||
+			strings.Contains(m, "bge-") ||
+			strings.Contains(lm, "embed")
 	}
 
-	testMessage := dto.Message{
-		Role:    "user",
-		Content: "hi",
+	if isEmbedding(modelName) {
+		req.Model = modelName
+		// dto.GeneralOpenAIRequest.Input — any
+		req.Input = []any{"hello world"}
+		return req
 	}
-	testRequest.Model = model
-	testRequest.Messages = append(testRequest.Messages, testMessage)
-	return testRequest
+
+	if strings.HasPrefix(modelName, "o") {
+		req.MaxCompletionTokens = 32
+	} else if strings.Contains(modelName, "thinking") {
+		if !strings.Contains(modelName, "claude") {
+			req.MaxTokens = 64
+		}
+	} else if strings.Contains(modelName, "gemini") {
+		req.MaxTokens = 128
+	} else {
+		req.MaxTokens = 64
+	}
+	temp := 0.0
+	req.Temperature = &temp
+	req.Model = modelName
+
+	switch strings.ToLower(testType) {
+	case "json":
+		sys := dto.Message{
+			Role:    req.GetSystemRoleName(),
+			Content: "Return ONLY a valid JSON object. No prose, no code fences, no explanations.",
+		}
+		user := dto.Message{
+			Role: "user",
+			Content: "Return a minimal JSON with fields: {\"ok\": true, \"model\": \"" + modelName + "\", \"ts\": current unix timestamp integer}.",
+		}
+		req.Messages = append(req.Messages, sys, user)
+		req.ResponseFormat = &dto.ResponseFormat{
+			Type: "json_object",
+		}
+
+	case "function":
+		req.Tools = []dto.ToolCallRequest{
+			{
+				Type: "function",
+				Function: dto.FunctionRequest{
+					Name:        "add",
+					Description: "Sum two integers",
+					Parameters: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"a": map[string]any{"type": "integer"},
+							"b": map[string]any{"type": "integer"},
+						},
+						"required":             []string{"a", "b"},
+						"additionalProperties": false,
+					},
+				},
+			},
+		}
+		// Форсим вызов инструмента
+		req.ToolChoice = "required"
+
+		sys := dto.Message{
+			Role:    req.GetSystemRoleName(),
+			Content: "You are a function-calling assistant. Prefer calling tools when available.",
+		}
+		user := dto.Message{
+			Role:    "user",
+			Content: "Please add 2 and 3.",
+		}
+		req.Messages = append(req.Messages, sys, user)
+
+	default: // "text"
+		msg := dto.Message{
+			Role:    "user",
+			Content: "hi",
+		}
+		req.Messages = append(req.Messages, msg)
+	}
+
+	return req
 }
 
 func TestChannel(c *gin.Context) {
@@ -338,14 +344,12 @@ func TestChannel(c *gin.Context) {
 			return
 		}
 	}
-	//defer func() {
-	//	if channel.ChannelInfo.IsMultiKey {
-	//		go func() { _ = channel.SaveChannelInfo() }()
-	//	}
-	//}()
+
 	testModel := c.Query("model")
+	testType := strings.ToLower(c.Query("type")) // "", "text", "json", "function"
 	tik := time.Now()
-	result := testChannel(channel, testModel)
+
+	result := testChannel(channel, testModel, testType)
 	if result.localErr != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -354,6 +358,7 @@ func TestChannel(c *gin.Context) {
 		})
 		return
 	}
+
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
 	go channel.UpdateResponseTime(milliseconds)
@@ -371,14 +376,12 @@ func TestChannel(c *gin.Context) {
 		"message": "",
 		"time":    consumedTime,
 	})
-	return
 }
 
 var testAllChannelsLock sync.Mutex
 var testAllChannelsRunning bool = false
 
 func testAllChannels(notify bool) error {
-
 	testAllChannelsLock.Lock()
 	if testAllChannelsRunning {
 		testAllChannelsLock.Unlock()
@@ -386,16 +389,17 @@ func testAllChannels(notify bool) error {
 	}
 	testAllChannelsRunning = true
 	testAllChannelsLock.Unlock()
+
 	channels, getChannelErr := model.GetAllChannels(0, 0, true, false)
 	if getChannelErr != nil {
 		return getChannelErr
 	}
 	var disableThreshold = int64(common.ChannelDisableThreshold * 1000)
 	if disableThreshold == 0 {
-		disableThreshold = 10000000 // a impossible value
+		disableThreshold = 10000000
 	}
+
 	gopool.Go(func() {
-		// 使用 defer 确保无论如何都会重置运行状态，防止死锁
 		defer func() {
 			testAllChannelsLock.Lock()
 			testAllChannelsRunning = false
@@ -405,32 +409,41 @@ func testAllChannels(notify bool) error {
 		for _, channel := range channels {
 			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 			tik := time.Now()
-			result := testChannel(channel, "")
+			result := testChannel(channel, "", "")
 			tok := time.Now()
 			milliseconds := tok.Sub(tik).Milliseconds()
 
 			shouldBanChannel := false
 			newAPIError := result.newAPIError
-			// request error disables the channel
 			if newAPIError != nil {
 				shouldBanChannel = service.ShouldDisableChannel(channel.Type, result.newAPIError)
 			}
 
-			// 当错误检查通过，才检查响应时间
 			if common.AutomaticDisableChannelEnabled && !shouldBanChannel {
 				if milliseconds > disableThreshold {
-					err := errors.New(fmt.Sprintf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0))
+					err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
 					newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
 					shouldBanChannel = true
 				}
 			}
 
-			// disable channel
+			// disable
 			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
-				go processChannelError(result.context, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+				go processChannelError(
+					result.context,
+					*types.NewChannelError(
+						channel.Id,
+						channel.Type,
+						channel.Name,
+						channel.ChannelInfo.IsMultiKey,
+						common.GetContextKeyString(result.context, constant.ContextKeyChannelKey),
+						channel.GetAutoBan(),
+					),
+					newAPIError,
+				)
 			}
 
-			// enable channel
+			// enable
 			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
 				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 			}
@@ -452,11 +465,7 @@ func TestAllChannels(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-	})
-	return
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 
 func AutomaticallyTestChannels(frequency int) {

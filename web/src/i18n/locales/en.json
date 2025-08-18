@@ -149,6 +149,7 @@
   "操作": "Actions",
   "未更新": "Not updated",
   "测试": "Test",
+  "重测": "Retest",
   "更新余额": "Update balance",
   "删除": "Delete",
   "删除渠道 {channel.name}": "Delete channel {channel.name}",

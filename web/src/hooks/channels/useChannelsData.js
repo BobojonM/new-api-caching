@@ -76,7 +76,8 @@ export const useChannelsData = () => {
   const [currentTestChannel, setCurrentTestChannel] = useState(null);
   const [modelSearchKeyword, setModelSearchKeyword] = useState('');
   const [modelTestResults, setModelTestResults] = useState({});
-  const [testingModels, setTestingModels] = useState(new Set());
+  // key: `${channel.id}-${model}-${type}`
+  const [testingKeys, setTestingKeys] = useState(new Set());
   const [selectedModelKeys, setSelectedModelKeys] = useState([]);
   const [isBatchTesting, setIsBatchTesting] = useState(false);
   const [testQueue, setTestQueue] = useState([]);
@@ -644,7 +645,7 @@ export const useChannelsData = () => {
     const { success, message, data } = res.data;
     if (success) {
       showSuccess(
-        t('已删除所有禁用渠道，共计 ${data} 个').replace('${data}', data),
+        t('已删除所有禁用通道，共计 ${data} 个').replace('${data}', data),
       );
       await refresh();
     } else {
@@ -689,19 +690,20 @@ export const useChannelsData = () => {
     }
   };
 
-  // Test channel
-  const testChannel = async (record, model) => {
-    setTestQueue(prev => [...prev, { channel: record, model }]);
+  // Test channel (single)
+  const testChannel = async (record, model, type = 'text') => {
+    setTestQueue(prev => [...prev, { channel: record, model, type }]);
     if (!isProcessingQueue) {
       setIsProcessingQueue(true);
     }
   };
 
-  // Process test queue
+  // Process test queue 
   const processTestQueue = async () => {
     if (!isProcessingQueue || testQueue.length === 0) return;
 
-    const { channel, model, indexInFiltered } = testQueue[0];
+    const { channel, model, type = 'text', indexInFiltered } = testQueue[0];
+    const typedKey = `${channel.id}-${model}-${type}`;
 
     if (currentTestChannel && currentTestChannel.id === channel.id) {
       let pageNo;
@@ -718,13 +720,15 @@ export const useChannelsData = () => {
     }
 
     try {
-      setTestingModels(prev => new Set([...prev, model]));
-      const res = await API.get(`/api/channel/test/${channel.id}?model=${model}`);
+      setTestingKeys(prev => new Set([...prev, typedKey]));
+      const res = await API.get(
+        `/api/channel/test/${channel.id}?model=${encodeURIComponent(model)}&type=${encodeURIComponent(type)}`
+      );
       const { success, message, time } = res.data;
 
       setModelTestResults(prev => ({
         ...prev,
-        [`${channel.id}-${model}`]: { success, time }
+        [typedKey]: { success, time }
       }));
 
       if (success) {
@@ -732,23 +736,16 @@ export const useChannelsData = () => {
           ch.response_time = time * 1000;
           ch.test_time = Date.now() / 1000;
         });
-        if (!model) {
-          showInfo(
-            t('通道 ${name} 测试成功，耗时 ${time.toFixed(2)} 秒。')
-              .replace('${name}', channel.name)
-              .replace('${time.toFixed(2)}', time.toFixed(2)),
-          );
-        }
       } else {
         showError(message);
       }
     } catch (error) {
       showError(error.message);
     } finally {
-      setTestingModels(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(model);
-        return newSet;
+      setTestingKeys(prev => {
+        const ns = new Set(prev);
+        ns.delete(typedKey);
+        return ns;
       });
     }
 
@@ -765,8 +762,8 @@ export const useChannelsData = () => {
     }
   }, [testQueue, isProcessingQueue]);
 
-  // Batch test models
-  const batchTestModels = async () => {
+  // Batch test models (supports: 'text' | 'function' | 'json')
+  const batchTestModels = async (type = 'text') => {
     if (!currentTestChannel) return;
 
     setIsBatchTesting(true);
@@ -782,6 +779,7 @@ export const useChannelsData = () => {
       filteredModels.map((model, idx) => ({
         channel: currentTestChannel,
         model,
+        type,
         indexInFiltered: idx,
       })),
     );
@@ -881,7 +879,7 @@ export const useChannelsData = () => {
     modelSearchKeyword,
     setModelSearchKeyword,
     modelTestResults,
-    testingModels,
+    testingKeys,
     selectedModelKeys,
     setSelectedModelKeys,
     isBatchTesting,
@@ -943,4 +941,4 @@ export const useChannelsData = () => {
     setCompactMode,
     setActivePage,
   };
-}; 
+};
